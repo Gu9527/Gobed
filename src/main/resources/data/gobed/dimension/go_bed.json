@@ -1,0 +1,10 @@
+{
+  "type": "gobed:go_bed_type",
+  "generator": {
+    "type": "gobed:go_bed_generator",
+    "biome_source": {
+      "type": "minecraft:fixed",
+      "biome": "gobed:empty_plains"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "gobed"
+version = "2.0.1"
+displayName = "Go Bed"
+description = '''
+Go Bed - 自定义超平坦维度传送模组！
+
+【功能介绍】
+- 维度传送方块：放置后搭建3x3结构即可传送
+- 动态维度生成：维度方块由你选择，十字方向为内侧方块，X字方向为边框方块
+- 2x2区块单位：每个32x32格区域有独立的边框和内侧方块
+- 地表高度y=64，底层为基岩
+- 固定正午时间，天气与主世界一致
+- 禁止自然刷怪和结构生成
+- 支持游戏内配置修改
+
+【合成配方】
+圆石围一圈，中间加一个木板
+
+【使用方法】
+1. 合成或获取传送方块
+2. 搭建3x3结构：
+   X O X
+   O P O
+   X O X
+   其中P=传送方块，O=内侧方块，X=边框方块
+3. 右键传送方块即可传送到自定义维度
+'''
+
+[[dependencies.gobed]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.gobed]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21,)"
+ordering = "NONE"
+side = "BOTH"
