@@ -14,13 +14,9 @@ public class GoBedRegistry {
     public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(Registries.ITEM, GoBedMod.MOD_ID);
 
     public static final DeferredHolder<Block, GoBedPortalBlock> PORTAL = BLOCKS.register("portal",
-            () -> new GoBedPortalBlock(BlockBehaviour.Properties.of().noCollission().lightLevel(state -> {
-                try {
-                    return ModConfigUtil.COMMON.portalLightLevel.get();
-                } catch (Exception e) {
-                    return 11;
-                }
-            })));
+            () -> new GoBedPortalBlock(BlockBehaviour.Properties.of()
+                    .noCollission()
+                    .lightLevel(state -> 11)));
 
     public static final DeferredHolder<Item, BlockItem> PORTAL_ITEM = ITEMS.register("portal",
             () -> new BlockItem(PORTAL.get(), new Item.Properties()));

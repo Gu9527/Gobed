@@ -5,11 +5,15 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class ConfigScreen extends Screen {
+    private final ModContainer modContainer;
     private final Screen parent;
     private EditBox lightLevelBox;
     private EditBox spawnHeightBox;
@@ -19,144 +23,143 @@ public class ConfigScreen extends Screen {
     private EditBox innerBlacklistBox;
     private Button enableTeleportBtn;
     private boolean enableTeleport = true;
-    private String errorMsg = "";
+    private List<String> errors = new ArrayList<>();
+    private int labelX;
+
+    public ConfigScreen(ModContainer modContainer, Screen parent) {
+        super(Component.translatable("gobed.config.title"));
+        this.modContainer = modContainer;
+        this.parent = parent;
+    }
 
     public ConfigScreen(Screen parent) {
-        super(Component.translatable("gobed.config.title"));
-        this.parent = parent;
+        this(null, parent);
     }
 
     @Override
     protected void init() {
         int centerX = this.width / 2;
-        int startY = 30;
+        labelX = centerX - 150;
+        int boxX = centerX + 10;
+        int boxW = 120;
+        int boxH = 18;
+        int rowH = 36;
+        int startY = 25;
 
         this.addRenderableWidget(Button.builder(Component.translatable("gobed.config.save"), button -> {
-            saveConfig();
-            this.minecraft.setScreen(parent);
-        }).bounds(centerX - 60, this.height - 35, 120, 20).build());
+            if (saveConfig()) {
+                this.minecraft.setScreen(parent);
+            }
+        }).bounds(centerX - 60, this.height - 30, 120, 20).build());
 
-        this.lightLevelBox = new EditBox(this.font, centerX - 50, startY + 30, 100, 20, Component.translatable("gobed.config.portal_light_level"));
-        this.lightLevelBox.setValue(String.valueOf(ModConfigUtil.COMMON.portalLightLevel.get()));
-        this.addWidget(lightLevelBox);
+        lightLevelBox = addRenderableWidget(new EditBox(this.font, boxX, startY, boxW, boxH, Component.empty()));
+        lightLevelBox.setValue(String.valueOf(ModConfigUtil.COMMON.portalLightLevel.get()));
 
-        this.spawnHeightBox = new EditBox(this.font, centerX - 50, startY + 80, 100, 20, Component.translatable("gobed.config.spawn_height"));
-        this.spawnHeightBox.setValue(String.valueOf(ModConfigUtil.COMMON.spawnHeight.get()));
-        this.addWidget(spawnHeightBox);
+        spawnHeightBox = addRenderableWidget(new EditBox(this.font, boxX, startY + rowH, boxW, boxH, Component.empty()));
+        spawnHeightBox.setValue(String.valueOf(ModConfigUtil.COMMON.spawnHeight.get()));
 
-        this.chunkUnitBox = new EditBox(this.font, centerX - 50, startY + 130, 100, 20, Component.translatable("gobed.config.chunk_unit"));
-        this.chunkUnitBox.setValue(String.valueOf(ModConfigUtil.COMMON.chunkUnitSize.get()));
-        this.addWidget(chunkUnitBox);
+        chunkUnitBox = addRenderableWidget(new EditBox(this.font, boxX, startY + rowH * 2, boxW, boxH, Component.empty()));
+        chunkUnitBox.setValue(String.valueOf(ModConfigUtil.COMMON.chunkUnitSize.get()));
 
-        this.dimensionHeightBox = new EditBox(this.font, centerX - 50, startY + 180, 100, 20, Component.translatable("gobed.config.dimension_height"));
-        this.dimensionHeightBox.setValue(String.valueOf(ModConfigUtil.COMMON.dimensionHeight.get()));
-        this.addWidget(dimensionHeightBox);
+        dimensionHeightBox = addRenderableWidget(new EditBox(this.font, boxX, startY + rowH * 3, boxW, boxH, Component.empty()));
+        dimensionHeightBox.setValue(String.valueOf(ModConfigUtil.COMMON.dimensionHeight.get()));
 
         enableTeleport = ModConfigUtil.COMMON.enableTeleportation.get();
-        this.enableTeleportBtn = Button.builder(
+        enableTeleportBtn = addRenderableWidget(Button.builder(
             Component.translatable(enableTeleport ? "gobed.config.teleport_on" : "gobed.config.teleport_off"),
             button -> {
                 enableTeleport = !enableTeleport;
                 button.setMessage(Component.translatable(enableTeleport ? "gobed.config.teleport_on" : "gobed.config.teleport_off"));
             }
-        ).bounds(centerX - 60, startY + 230, 120, 20).build();
-        this.addRenderableWidget(enableTeleportBtn);
+        ).bounds(boxX, startY + rowH * 4, boxW, boxH).build());
 
-        this.borderBlacklistBox = new EditBox(this.font, centerX - 50, startY + 280, 100, 20, Component.translatable("gobed.config.border_blacklist"));
-        this.borderBlacklistBox.setValue(String.join(",", ModConfigUtil.COMMON.borderBlacklist.get()));
-        this.addWidget(borderBlacklistBox);
+        borderBlacklistBox = addRenderableWidget(new EditBox(this.font, boxX, startY + rowH * 5, boxW, boxH, Component.empty()));
+        borderBlacklistBox.setValue(String.join(",", ModConfigUtil.COMMON.borderBlacklist.get()));
 
-        this.innerBlacklistBox = new EditBox(this.font, centerX - 50, startY + 330, 100, 20, Component.translatable("gobed.config.inner_blacklist"));
-        this.innerBlacklistBox.setValue(String.join(",", ModConfigUtil.COMMON.innerBlacklist.get()));
-        this.addWidget(innerBlacklistBox);
+        innerBlacklistBox = addRenderableWidget(new EditBox(this.font, boxX, startY + rowH * 6, boxW, boxH, Component.empty()));
+        innerBlacklistBox.setValue(String.join(",", ModConfigUtil.COMMON.innerBlacklist.get()));
     }
 
-    private boolean validateAndSet(String value, int min, int max, String errorRangeKey, String errorNumberKey,
-                                    ModConfigSpec.IntValue configValue) {
-        try {
-            int val = Integer.parseInt(value);
-            if (val < min || val > max) {
-                errorMsg = Component.translatable(errorRangeKey).getString();
-                return false;
-            }
-            configValue.set(val);
-            return true;
-        } catch (NumberFormatException e) {
-            errorMsg = Component.translatable(errorNumberKey).getString();
+    private boolean saveConfig() {
+        errors.clear();
+
+        Integer light = parseInt(lightLevelBox.getValue(), 0, 15,
+                Component.translatable("gobed.config.error.light_range").getString(),
+                Component.translatable("gobed.config.error.light_number").getString());
+        Integer spawn = parseInt(spawnHeightBox.getValue(), -64, 320,
+                Component.translatable("gobed.config.error.spawn_range").getString(),
+                Component.translatable("gobed.config.error.spawn_number").getString());
+        Integer chunk = parseInt(chunkUnitBox.getValue(), 1, 16,
+                Component.translatable("gobed.config.error.chunk_range").getString(),
+                Component.translatable("gobed.config.error.chunk_number").getString());
+        Integer height = parseInt(dimensionHeightBox.getValue(), 1, 320,
+                Component.translatable("gobed.config.error.height_range").getString(),
+                Component.translatable("gobed.config.error.height_number").getString());
+
+        if (!errors.isEmpty()) {
             return false;
         }
+
+        ModConfigUtil.COMMON.portalLightLevel.set(light);
+        ModConfigUtil.COMMON.spawnHeight.set(spawn);
+        ModConfigUtil.COMMON.chunkUnitSize.set(chunk);
+        ModConfigUtil.COMMON.dimensionHeight.set(height);
+        ModConfigUtil.COMMON.enableTeleportation.set(enableTeleport);
+        ModConfigUtil.COMMON.borderBlacklist.set(parseList(borderBlacklistBox.getValue()));
+        ModConfigUtil.COMMON.innerBlacklist.set(parseList(innerBlacklistBox.getValue()));
+        return true;
     }
 
-    private void saveConfig() {
-        errorMsg = "";
-
-        if (!validateAndSet(lightLevelBox.getValue(), 0, 15,
-                "gobed.config.error.light_range", "gobed.config.error.light_number",
-                ModConfigUtil.COMMON.portalLightLevel)) return;
-
-        if (!validateAndSet(spawnHeightBox.getValue(), -64, 320,
-                "gobed.config.error.spawn_range", "gobed.config.error.spawn_number",
-                ModConfigUtil.COMMON.spawnHeight)) return;
-
-        if (!validateAndSet(chunkUnitBox.getValue(), 1, 16,
-                "gobed.config.error.chunk_range", "gobed.config.error.chunk_number",
-                ModConfigUtil.COMMON.chunkUnitSize)) return;
-
-        if (!validateAndSet(dimensionHeightBox.getValue(), 1, 320,
-                "gobed.config.error.height_range", "gobed.config.error.height_number",
-                ModConfigUtil.COMMON.dimensionHeight)) return;
-
-        ModConfigUtil.COMMON.enableTeleportation.set(enableTeleport);
-
-        String borderRaw = borderBlacklistBox.getValue().trim();
-        String innerRaw = innerBlacklistBox.getValue().trim();
-        if (!borderRaw.isEmpty()) {
-            ModConfigUtil.COMMON.borderBlacklist.set(List.of(borderRaw.split(",")));
-        } else {
-            ModConfigUtil.COMMON.borderBlacklist.set(List.of("minecraft:bedrock"));
+    private Integer parseInt(String value, int min, int max, String rangeMsg, String numberMsg) {
+        try {
+            int val = Integer.parseInt(value.trim());
+            if (val < min || val > max) {
+                errors.add(rangeMsg);
+                return null;
+            }
+            return val;
+        } catch (NumberFormatException e) {
+            errors.add(numberMsg);
+            return null;
         }
-        if (!innerRaw.isEmpty()) {
-            ModConfigUtil.COMMON.innerBlacklist.set(List.of(innerRaw.split(",")));
-        } else {
-            ModConfigUtil.COMMON.innerBlacklist.set(List.of("minecraft:bedrock"));
+    }
+
+    private List<String> parseList(String raw) {
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return List.of("minecraft:bedrock");
         }
+        return Arrays.stream(trimmed.split("\\s*,\\s*"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         int centerX = this.width / 2;
-        int startY = 30;
+        int startY = 25;
+        int rowH = 36;
 
-        String title = Component.translatable("gobed.config.title").getString();
-        guiGraphics.drawString(this.font, title, centerX - this.font.width(title) / 2, 10, 0xFFFFFF);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.title"),
+                centerX - this.font.width(Component.translatable("gobed.config.title")) / 2, 5, 0xFFFFFF);
 
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.portal_light_level").getString(), centerX - 120, startY + 18, 0xAAAAAA);
-        this.lightLevelBox.render(guiGraphics, mouseX, mouseY, partialTick);
+        int labelY = startY + 4;
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.portal_light_level"), labelX, labelY, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.spawn_height"), labelX, labelY + rowH, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.chunk_unit"), labelX, labelY + rowH * 2, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.dimension_height"), labelX, labelY + rowH * 3, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.enable_teleport"), labelX, labelY + rowH * 4, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.border_blacklist"), labelX, labelY + rowH * 5, 0xAAAAAA);
+        guiGraphics.drawString(this.font, Component.translatable("gobed.config.inner_blacklist"), labelX, labelY + rowH * 6, 0xAAAAAA);
 
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.spawn_height").getString(), centerX - 120, startY + 68, 0xAAAAAA);
-        this.spawnHeightBox.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.chunk_unit").getString(), centerX - 120, startY + 118, 0xAAAAAA);
-        this.chunkUnitBox.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.dimension_height").getString(), centerX - 120, startY + 168, 0xAAAAAA);
-        this.dimensionHeightBox.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.enable_teleport").getString(), centerX - 120, startY + 218, 0xAAAAAA);
-
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.border_blacklist").getString(), centerX - 120, startY + 268, 0xAAAAAA);
-        this.borderBlacklistBox.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        guiGraphics.drawString(this.font, Component.translatable("gobed.config.inner_blacklist").getString(), centerX - 120, startY + 318, 0xAAAAAA);
-        this.innerBlacklistBox.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        if (!errorMsg.isEmpty()) {
-            guiGraphics.drawString(this.font, "§c" + errorMsg, centerX - 120, this.height - 55, 0xFF5555);
+        int errorY = this.height - 50 - Math.max(0, errors.size() - 1) * 11;
+        for (String err : errors) {
+            guiGraphics.drawString(this.font, "§c" + err, labelX, errorY, 0xFF5555);
+            errorY += 11;
         }
-
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     @Override

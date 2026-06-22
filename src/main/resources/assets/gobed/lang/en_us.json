@@ -12,15 +12,18 @@
   "gobed.tooltip.o": "O = Inner Block (any)",
   "gobed.tooltip.x": "X = Border Block (any)",
   "gobed.tooltip.build_complete": "§aRight-click P after building to teleport!",
-  "gobed.tooltip.dimension_features": "§7Dimension Features:",
-  "gobed.tooltip.feature_fixed_time": "§7· Fixed noon time",
-  "gobed.tooltip.feature_no_mobs": "§7· No natural mob spawning",
-  "gobed.tooltip.feature_no_structures": "§7· No structure generation",
+  "gobed.tooltip.dimension_features": "§5Dimension Features:",
+  "gobed.tooltip.feature_fixed_time": "§5· Fixed noon time",
+  "gobed.tooltip.feature_no_mobs": "§5· No natural mob spawning",
+  "gobed.tooltip.feature_no_structures": "§5· No structure generation",
 
   "gobed.teleport.disabled": "§cTeleportation is disabled!",
   "gobed.teleport.need_structure": "§cBuild a 3x3 structure to teleport!",
   "gobed.teleport.success": "§aTeleported to custom dimension!",
+  "gobed.teleport.back": "§aReturned to overworld!",
   "gobed.teleport.failed": "§cDimension failed to load, please retry!",
+
+  "gobed.gift.missing_mods": "§eWarning: %s item(s) are missing because their dependency mods are not installed",
 
   "gobed.config.title": "Go Bed - Configuration",
   "gobed.config.save": "Save & Return",

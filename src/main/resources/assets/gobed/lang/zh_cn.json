@@ -20,7 +20,10 @@
   "gobed.teleport.disabled": "§c传送功能已被禁用！",
   "gobed.teleport.need_structure": "§c需要搭建3x3结构才能传送！",
   "gobed.teleport.success": "§a已传送到自定义维度！",
+  "gobed.teleport.back": "§a已返回主世界！",
   "gobed.teleport.failed": "§c维度加载失败，请重试！",
+
+  "gobed.gift.missing_mods": "§e警告：%s 件物品因依赖模组未安装而缺失",
 
   "gobed.config.title": "Go Bed - 配置",
   "gobed.config.save": "保存并返回",

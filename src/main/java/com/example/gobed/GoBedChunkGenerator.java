@@ -1,8 +1,5 @@
 package com.example.gobed;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
@@ -24,64 +21,66 @@ import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class GoBedChunkGenerator extends ChunkGenerator {
     private static final int MIN_Y = -64;
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final int EDGE_WIDTH = 2;
 
-    private static final AtomicReference<String> BORDER_BLOCK_ID = new AtomicReference<>("minecraft:deepslate");
-    private static final AtomicReference<String> INNER_BLOCK_ID = new AtomicReference<>("minecraft:smooth_stone");
+    public static final String DEFAULT_BORDER_BLOCK = "minecraft:deepslate";
+    public static final String DEFAULT_INNER_BLOCK = "minecraft:smooth_stone";
+
+    /**
+     * 实例字段：替代原先的 static {@code AtomicReference}。
+     * 解决了多服务器/多维度共享全局状态导致的竞态与互相污染问题（见审查 #1），
+     * 也消除了每次传送都要把配置写到 {@code user.dir/gobed_settings.json} 的设计缺陷（见审查 #6）。
+     *
+     * <p>非 final：保留"玩家通过 3×3 结构选择维度方块"的原特性。
+     * 初值来自 Codec（加载存档时回填），运行期可经 {@link #setBlockSettings} 修改；
+     * 运行期修改是易失的（不会回写 level.dat），重启后回到 Codec 默认值。
+     * 已生成的区块方块保存在 region 文件里不受影响，只影响新生成的区块。</p>
+     */
+    private String borderBlockId;
+    private String innerBlockId;
 
     public static final MapCodec<GoBedChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(instance ->
         instance.group(
-            BiomeSource.CODEC.fieldOf("biome_source").forGetter(g -> g.biomeSource)
+            BiomeSource.CODEC.fieldOf("biome_source").forGetter(g -> g.biomeSource),
+            net.minecraft.util.ExtraCodecs.NON_EMPTY_STRING
+                .optionalFieldOf("border_block", DEFAULT_BORDER_BLOCK)
+                .forGetter(g -> g.borderBlockId),
+            net.minecraft.util.ExtraCodecs.NON_EMPTY_STRING
+                .optionalFieldOf("inner_block", DEFAULT_INNER_BLOCK)
+                .forGetter(g -> g.innerBlockId)
         ).apply(instance, instance.stable(GoBedChunkGenerator::new))
     );
 
     public GoBedChunkGenerator(BiomeSource biomeSource) {
+        this(biomeSource, DEFAULT_BORDER_BLOCK, DEFAULT_INNER_BLOCK);
+    }
+
+    public GoBedChunkGenerator(BiomeSource biomeSource, String borderBlockId, String innerBlockId) {
         super(biomeSource);
-        loadSettings();
+        this.borderBlockId = borderBlockId;
+        this.innerBlockId = innerBlockId;
     }
 
-    public static void setBlockSettings(String border, String inner) {
-        BORDER_BLOCK_ID.set(border);
-        INNER_BLOCK_ID.set(inner);
-        saveSettings();
+    public String getBorderBlockId() {
+        return borderBlockId;
     }
 
-    private static Path getSettingsPath() {
-        return Path.of(System.getProperty("user.dir"), "gobed_settings.json");
+    public String getInnerBlockId() {
+        return innerBlockId;
     }
 
-    public static void saveSettings() {
-        try {
-            JsonObject obj = new JsonObject();
-            obj.addProperty("border_block", BORDER_BLOCK_ID.get());
-            obj.addProperty("inner_block", INNER_BLOCK_ID.get());
-            Files.writeString(getSettingsPath(), GSON.toJson(obj));
-        } catch (IOException e) {
-            GoBedMod.LOGGER.error("Failed to save settings", e);
-        }
-    }
-
-    public static void loadSettings() {
-        Path path = getSettingsPath();
-        if (Files.exists(path)) {
-            try {
-                String json = Files.readString(path);
-                JsonObject obj = GSON.fromJson(json, JsonObject.class);
-                if (obj.has("border_block")) BORDER_BLOCK_ID.set(obj.get("border_block").getAsString());
-                if (obj.has("inner_block")) INNER_BLOCK_ID.set(obj.get("inner_block").getAsString());
-            } catch (IOException e) {
-                GoBedMod.LOGGER.error("Failed to load settings", e);
-            }
-        }
+    /**
+     * 由 {@code GoBedPortalBlock} 在玩家用合法 3×3 结构传送时调用，让新生成区块使用玩家选定的方块。
+     * 仅修改本维度的 generator 实例，不写盘、不影响其它维度（见审查 #1、#6）。
+     */
+    public void setBlockSettings(String border, String inner) {
+        this.borderBlockId = border;
+        this.innerBlockId = inner;
     }
 
     @Override
@@ -89,6 +88,10 @@ public class GoBedChunkGenerator extends ChunkGenerator {
         return CODEC;
     }
 
+    /**
+     * 同步生成：本生成器没有噪声阶段，所以直接把区块填好并立即返回。
+     * 保留 {@link CompletableFuture} 是为了符合 {@link ChunkGenerator} 的契约（见审查 #18）。
+     */
     @Override
     public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState, StructureManager structureManager, ChunkAccess chunk) {
         buildChunkBlocks(chunk);
@@ -108,28 +111,30 @@ public class GoBedChunkGenerator extends ChunkGenerator {
         int startX = pos.getMinBlockX();
         int startZ = pos.getMinBlockZ();
 
-        Block borderBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(BORDER_BLOCK_ID.get()));
-        Block innerBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(INNER_BLOCK_ID.get()));
+        // 让 dimensionHeight / chunkUnitSize 真正生效（见审查 #2、#3）
+        int dimensionHeight = ModConfigUtil.COMMON.dimensionHeight.get();
+        int unitBlocks = ModConfigUtil.COMMON.chunkUnitSize.get() * 16;
 
-        if (borderBlock == null) borderBlock = Blocks.DEEPSLATE;
-        if (innerBlock == null) innerBlock = Blocks.SMOOTH_STONE;
+        BlockState borderState = resolveBorderBlock().defaultBlockState();
+        BlockState innerState = resolveInnerBlock().defaultBlockState();
+        BlockState bedrockState = Blocks.BEDROCK.defaultBlockState();
 
-        if (ModConfigUtil.COMMON.borderBlacklist.get().contains(BuiltInRegistries.BLOCK.getKey(borderBlock).toString())) {
-            borderBlock = Blocks.DEEPSLATE;
-        }
-        if (ModConfigUtil.COMMON.innerBlacklist.get().contains(BuiltInRegistries.BLOCK.getKey(innerBlock).toString())) {
-            innerBlock = Blocks.SMOOTH_STONE;
-        }
-
+        // 复用单个 mutable 坐标，每区块减少约 1024 个临时 BlockPos 对象（见审查 #19）
+        BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
         for (int x = startX; x < startX + 16; x++) {
+            int modX = Math.floorMod(x, unitBlocks);
+            boolean isEdgeX = modX < EDGE_WIDTH || modX >= unitBlocks - EDGE_WIDTH;
             for (int z = startZ; z < startZ + 16; z++) {
-                boolean isEdge = (Math.floorMod(x, 32) < 2) || (Math.floorMod(x, 32) >= 30) || (Math.floorMod(z, 32) < 2) || (Math.floorMod(z, 32) >= 30);
-                BlockState blockState = isEdge ? borderBlock.defaultBlockState() : innerBlock.defaultBlockState();
+                int modZ = Math.floorMod(z, unitBlocks);
+                boolean isEdge = isEdgeX
+                        || modZ < EDGE_WIDTH
+                        || modZ >= unitBlocks - EDGE_WIDTH;
+                BlockState fillState = isEdge ? borderState : innerState;
 
-                for (int y = 1; y <= 64; y++) {
-                    chunk.setBlockState(new BlockPos(x, y, z), blockState, false);
+                for (int y = 1; y <= dimensionHeight; y++) {
+                    chunk.setBlockState(mpos.set(x, y, z), fillState, false);
                 }
-                chunk.setBlockState(new BlockPos(x, 0, z), Blocks.BEDROCK.defaultBlockState(), false);
+                chunk.setBlockState(mpos.set(x, 0, z), bedrockState, false);
             }
         }
     }
@@ -144,7 +149,8 @@ public class GoBedChunkGenerator extends ChunkGenerator {
 
     @Override
     public int getGenDepth() {
-        return 384;
+        // 与实际生成高度保持一致（含基岩层），原值 384 与现实不符（见审查 #20）
+        return ModConfigUtil.COMMON.dimensionHeight.get() + 1;
     }
 
     @Override
@@ -159,29 +165,28 @@ public class GoBedChunkGenerator extends ChunkGenerator {
 
     @Override
     public int getBaseHeight(int x, int z, Heightmap.Types heightmapType, net.minecraft.world.level.LevelHeightAccessor level, RandomState randomState) {
-        return 64;
+        return ModConfigUtil.COMMON.dimensionHeight.get();
     }
 
     @Override
     public net.minecraft.world.level.NoiseColumn getBaseColumn(int x, int z, net.minecraft.world.level.LevelHeightAccessor level, RandomState randomState) {
-        Block borderBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(BORDER_BLOCK_ID.get()));
-        Block innerBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(INNER_BLOCK_ID.get()));
-        if (borderBlock == null) borderBlock = Blocks.DEEPSLATE;
-        if (innerBlock == null) innerBlock = Blocks.SMOOTH_STONE;
+        int dimensionHeight = ModConfigUtil.COMMON.dimensionHeight.get();
+        int unitBlocks = ModConfigUtil.COMMON.chunkUnitSize.get() * 16;
 
-        if (ModConfigUtil.COMMON.borderBlacklist.get().contains(BuiltInRegistries.BLOCK.getKey(borderBlock).toString())) {
-            borderBlock = Blocks.DEEPSLATE;
-        }
-        if (ModConfigUtil.COMMON.innerBlacklist.get().contains(BuiltInRegistries.BLOCK.getKey(innerBlock).toString())) {
-            innerBlock = Blocks.SMOOTH_STONE;
-        }
+        BlockState borderState = resolveBorderBlock().defaultBlockState();
+        BlockState innerState = resolveInnerBlock().defaultBlockState();
 
-        boolean isEdge = (Math.floorMod(x, 32) < 2) || (Math.floorMod(x, 32) >= 30) || (Math.floorMod(z, 32) < 2) || (Math.floorMod(z, 32) >= 30);
-        BlockState fillState = isEdge ? borderBlock.defaultBlockState() : innerBlock.defaultBlockState();
+        int modX = Math.floorMod(x, unitBlocks);
+        int modZ = Math.floorMod(z, unitBlocks);
+        boolean isEdge = modX < EDGE_WIDTH
+                || modX >= unitBlocks - EDGE_WIDTH
+                || modZ < EDGE_WIDTH
+                || modZ >= unitBlocks - EDGE_WIDTH;
+        BlockState fillState = isEdge ? borderState : innerState;
 
-        BlockState[] states = new BlockState[65];
+        BlockState[] states = new BlockState[dimensionHeight + 1];
         states[0] = Blocks.BEDROCK.defaultBlockState();
-        for (int i = 1; i <= 64; i++) {
+        for (int i = 1; i <= dimensionHeight; i++) {
             states[i] = fillState;
         }
         return new net.minecraft.world.level.NoiseColumn(0, states);
@@ -190,5 +195,34 @@ public class GoBedChunkGenerator extends ChunkGenerator {
     @Override
     public void addDebugScreenInfo(List<String> info, RandomState randomState, BlockPos pos) {
         info.add(net.minecraft.network.chat.Component.translatable("gobed.chunk_generator.name").getString());
+    }
+
+    /**
+     * 解析边框方块：先用本实例的配置值；解析失败或被列入黑名单时回退到 {@link Blocks#DEEPSLATE}。
+     */
+    private Block resolveBorderBlock() {
+        return resolveBlock(borderBlockId, DEFAULT_BORDER_BLOCK, Blocks.DEEPSLATE,
+                ModConfigUtil.COMMON.borderBlacklist.get());
+    }
+
+    /**
+     * 解析内侧方块：同上，回退到 {@link Blocks#SMOOTH_STONE}。
+     */
+    private Block resolveInnerBlock() {
+        return resolveBlock(innerBlockId, DEFAULT_INNER_BLOCK, Blocks.SMOOTH_STONE,
+                ModConfigUtil.COMMON.innerBlacklist.get());
+    }
+
+    private Block resolveBlock(String id, String defaultId, Block fallback, List<? extends String> blacklist) {
+        String resolved = id == null || id.isBlank() ? defaultId : id;
+        Block block = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(resolved));
+        if (block == Blocks.AIR && !resolved.equals("minecraft:air")) {
+            block = fallback;
+        }
+        String key = BuiltInRegistries.BLOCK.getKey(block).toString();
+        if (blacklist.contains(key)) {
+            block = fallback;
+        }
+        return block;
     }
 }

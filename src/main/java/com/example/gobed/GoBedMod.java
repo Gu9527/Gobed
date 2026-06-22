@@ -4,11 +4,12 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
-import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.registries.RegisterEvent;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -31,7 +32,12 @@ public class GoBedMod {
 
         modEventBus.addListener(GoBedMod::onRegister);
 
-        NeoForge.EVENT_BUS.register(GoBedEvents.class);
+        // GoBedEvents 改用 @EventBusSubscriber 自动注册，不再手动 register（见审查 #22）
+
+        // 客户端侧注册配置界面（见审查 #12）
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            GoBedClient.registerClientConfig(modContainer);
+        }
 
         LOGGER.info("Go Bed Mod is loading!");
     }

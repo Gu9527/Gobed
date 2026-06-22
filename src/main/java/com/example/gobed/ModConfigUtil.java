@@ -1,5 +1,6 @@
 package com.example.gobed;
 
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -44,10 +45,14 @@ public class ModConfigUtil {
                     .define("enableTeleportation", true);
             borderBlacklist = builder
                     .comment("Blacklisted blocks for border (cannot be used as border)")
-                    .defineList("borderBlacklist", () -> Arrays.asList("minecraft:bedrock"), obj -> obj instanceof String);
+                    .defineList("borderBlacklist",
+                            () -> Arrays.asList("minecraft:bedrock"),
+                            obj -> obj instanceof String s && ResourceLocation.tryParse(s) != null);
             innerBlacklist = builder
                     .comment("Blacklisted blocks for inner (cannot be used as inner)")
-                    .defineList("innerBlacklist", () -> Arrays.asList("minecraft:bedrock"), obj -> obj instanceof String);
+                    .defineList("innerBlacklist",
+                            () -> Arrays.asList("minecraft:bedrock"),
+                            obj -> obj instanceof String s && ResourceLocation.tryParse(s) != null);
             builder.pop();
         }
     }

@@ -2,7 +2,7 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.28-beta'
 }
 
-version = '2.0.2'
+version = '2.0.3'
 group = 'com.example.gobed'
 
 base {
@@ -30,12 +30,6 @@ neoForge {
     }
 }
 
-repositories {
-    mavenLocal()
-    maven { url 'https://maven.aliyun.com/repository/public' }
-    maven { url 'https://maven.aliyun.com/repository/central' }
-    maven { url 'https://maven.neoforged.net/releases' }
-}
-
 dependencies {
+    compileOnly files('D:/MC/.minecraft/versions/Infinity Legacy II/mods/appliedenergistics2-19.2.17.jar')
 }
