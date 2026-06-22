@@ -1,4 +1,4 @@
-# 无基不行 (No Bed No Go)
+# Go Bed (无基不行)
 
 一个为 Minecraft 1.21.x 添加自定义超平坦维度的 NeoForge 模组。
 
